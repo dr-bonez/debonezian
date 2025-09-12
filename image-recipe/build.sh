@@ -80,6 +80,9 @@ lb config \
 	${PLATFORM_CONFIG_EXTRAS[@]}
 
 # Overlays
+if [ -d ../lb-overlays/${IB_TARGET_PLATFORM} ]; then
+	rsync -rLp ../lb-overlays/${IB_TARGET_PLATFORM}/ ./
+fi
 
 mkdir -p config/includes.chroot/etc
 echo debonezian > config/includes.chroot/etc/hostname
