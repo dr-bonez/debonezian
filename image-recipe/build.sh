@@ -38,6 +38,7 @@ elif [ "$QEMU_ARCH" = 'arm64' ]; then
 	BOOTLOADERS=grub-efi
 fi
 
+rm -rf $prep_results_dir
 mkdir -p $prep_results_dir
 
 cd $prep_results_dir
@@ -56,6 +57,12 @@ if [ "$NON_FREE" = 1 ]; then
 		ARCHIVE_AREAS="$ARCHIVE_AREAS non-free-firmware"
 	fi
 fi
+
+PLATFORM_CONFIG_EXTRAS=()
+for file in ../lb-overlays/${IB_TARGET_PLATFORM}/config/packages.chroot/linux-image-*.deb; do
+	PLATFORM_CONFIG_EXTRAS+=(--linux-packages linux-image linux-headers)
+	PLATFORM_CONFIG_EXTRAS+=(--linux-flavor "${${file#linux-image-}%.deb}")
+done
 
 cat > /etc/wgetrc << EOF
 retry_connrefused = on
@@ -137,23 +144,6 @@ EOF
 echo 'grub-efi grub2-common' > config/package-lists/bootloader.list.chroot
 if [ "${IB_TARGET_ARCH}" = "amd64" ] || [ "${IB_TARGET_ARCH}" = "i386" ]; then
 	echo 'grub-pc-bin' >> config/package-lists/bootloader.list.chroot
-fi
-
-if [ "${IB_TARGET_ARCH}" = "riscv64" ]; then
-	tee 0500-compress-vmlinux.hook.binary > config/hooks/normal/0500-compress-vmlinux.hook.chroot <<- 'EOF'
-	#!/bin/bash
-	
-	set -e
-	
-	LINUX_VERSION="6.12.33+deb13-riscv64"
-	
-	cat "/boot/vmlinux-$LINUX_VERSION" | gzip > "/boot/vmlinuz-$LINUX_VERSION"
-	
-	if [ ! -f "/boot/vmlinuz-$LINUX_VERSION" ]; then
-	    echo "Error: vmlinuz creation failed" >&2
-	    exit 1
-	fi
-	EOF
 fi
 
 cat > config/hooks/normal/9000-setup.hook.chroot << EOF

@@ -1,2 +1,4 @@
 results/
+build_dir/
 tmp/
+*.deb
