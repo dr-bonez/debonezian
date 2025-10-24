@@ -25,7 +25,7 @@ define ingredients_src
   TARGET := $(1)
   $$(call uses_arch,$$(TARGET))
   ifeq ($$(patsubst %-nonfree,%,$1),riscv64)
-    LINUX_VERSION := 6.16
+    # LINUX_VERSION := 6.16
   endif
   INGREDIENTS := ./image-recipe/run-local-build.sh ./image-recipe/build.sh image-recipe/Dockerfile $$(TARGET)/ingredients
   ifneq ($$(LINUX_VERSION),)

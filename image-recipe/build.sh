@@ -22,20 +22,33 @@ echo "==== Debonezian Image Build ===="
 
 echo "Building for architecture: $IB_TARGET_ARCH"
 
-base_dir="/root"
+SOURCE_DIR="$(realpath $(dirname "${BASH_SOURCE[0]}"))"
+
+base_dir="$(pwd)"
 prep_results_dir="$base_dir/images-prep"
 RESULTS_DIR="$base_dir/results"
 echo "Saving results in: $RESULTS_DIR"
 
 IMAGE_BASENAME=debonezian_${IB_TARGET_PLATFORM}
 
-QEMU_ARCH=${IB_TARGET_ARCH}
-BOOTLOADERS=grub-efi,syslinux
-if [ "$QEMU_ARCH" = 'amd64' ]; then
+BOOTLOADERS=grub-efi
+if [ "$IB_TARGET_PLATFORM" = "x86_64" ] || [ "$IB_TARGET_PLATFORM" = "x86_64-nonfree" ]; then
+	IB_TARGET_ARCH=amd64
 	QEMU_ARCH=x86_64
-elif [ "$QEMU_ARCH" = 'arm64' ]; then
+	BOOTLOADERS=grub-efi,syslinux
+elif [ "$IB_TARGET_PLATFORM" = "aarch64" ] || [ "$IB_TARGET_PLATFORM" = "aarch64-nonfree" ] || [ "$IB_TARGET_PLATFORM" = "raspberrypi" ]  || [ "$IB_TARGET_PLATFORM" = "rockchip64" ]; then
+	IB_TARGET_ARCH=arm64
 	QEMU_ARCH=aarch64
-	BOOTLOADERS=grub-efi
+else
+	IB_TARGET_ARCH="$IB_TARGET_PLATFORM"
+	QEMU_ARCH="$IB_TARGET_PLATFORM"
+fi
+
+QEMU_ARGS=()
+if [ "$QEMU_ARCH" != $(uname -m) ]; then
+	update-binfmts --enable qemu-${QEMU_ARCH}
+	QEMU_ARGS+=(--bootstrap-qemu-arch ${IB_TARGET_ARCH})
+	QEMU_ARGS+=(--bootstrap-qemu-static /usr/bin/qemu-${QEMU_ARCH})
 fi
 
 rm -rf $prep_results_dir
@@ -59,15 +72,20 @@ if [ "$NON_FREE" = 1 ]; then
 fi
 
 PLATFORM_CONFIG_EXTRAS=()
-for file in ../lb-overlays/${IB_TARGET_PLATFORM}/config/packages.chroot/linux-image-*.deb; do
-	PLATFORM_CONFIG_EXTRAS+=(--linux-packages linux-image linux-headers)
-	PLATFORM_CONFIG_EXTRAS+=(--linux-flavor "${${file#linux-image-}%.deb}")
-done
+# for file in $(ls ${SOURCE_DIR}/lb-overlays/${IB_TARGET_PLATFORM}/config/packages.chroot/linux-image-*.deb); do
+# 	echo "$file"
+# 	PLATFORM_CONFIG_EXTRAS+=(--linux-packages="linux-image linux-headers linux-libc")
+# 	break
+# done
 
-cat > /etc/wgetrc << EOF
-retry_connrefused = on
-tries = 100
-EOF
+if [ -n "${IB_LINUX_VERSION}" ]; then
+	PLATFORM_CONFIG_EXTRAS+=(--linux-packages=linux-image-${IB_LINUX_VERSION})
+fi
+
+if [ "${IB_TARGET_PLATFORM}" != "x86_64" ] && [ "${IB_TARGET_PLATFORM}" != "aarch64" ]; then
+	PLATFORM_CONFIG_EXTRAS+=(--uefi-secure-boot=disable)
+fi
+
 lb config \
 	--iso-application "debonezian ${IB_TARGET_ARCH}" \
 	--iso-volume "debonezian ${IB_TARGET_ARCH}" \
@@ -76,20 +94,22 @@ lb config \
 	--backports true \
 	--bootappend-live "boot=live noautologin" \
 	--bootloaders $BOOTLOADERS \
+	--cache false \
 	--mirror-bootstrap "https://deb.debian.org/debian/" \
 	--mirror-chroot "https://deb.debian.org/debian/" \
 	--mirror-chroot-security "https://security.debian.org/debian-security" \
 	-d ${IB_SUITE} \
 	-a ${IB_TARGET_ARCH} \
-	--bootstrap-qemu-arch ${IB_TARGET_ARCH} \
-	--bootstrap-qemu-static /usr/bin/qemu-${QEMU_ARCH}-static \
+	${QEMU_ARGS[@]} \
 	--archive-areas "${ARCHIVE_AREAS}" \
 	${PLATFORM_CONFIG_EXTRAS[@]}
 
 # Overlays
-if [ -d ../lb-overlays/${IB_TARGET_PLATFORM} ]; then
-	rsync -rLp ../lb-overlays/${IB_TARGET_PLATFORM}/ ./
+if [ -d ../image-recipe/lb-overlays/${IB_TARGET_PLATFORM} ]; then
+	rsync -rLp ../image-recipe/lb-overlays/${IB_TARGET_PLATFORM}/ ./
 fi
+
+dpkg-name config/packages.chroot/*
 
 mkdir -p config/includes.chroot/etc
 echo debonezian > config/includes.chroot/etc/hostname
@@ -138,9 +158,6 @@ $IB_INCLUDE b3sum bash-completion bmon btrfs-progs ca-certificates cryptsetup cu
 EOF
 
 ## Firmware
-# if [ "$NON_FREE" = 1 ]; then
-# 	 echo 'firmware-misc-nonfree' > config/package-lists/nonfree.list.chroot
-# fi
 echo 'grub-efi grub2-common' > config/package-lists/bootloader.list.chroot
 if [ "${IB_TARGET_ARCH}" = "amd64" ] || [ "${IB_TARGET_ARCH}" = "i386" ]; then
 	echo 'grub-pc-bin' >> config/package-lists/bootloader.list.chroot
@@ -154,6 +171,8 @@ set -e
 useradd --shell /bin/bash -m drbonez
 echo drbonez:drbonez | chpasswd
 usermod -aG sudo drbonez
+
+update-initramfs -c -k all
 
 echo "#" > /etc/network/interfaces
 cat << EOF2 > /etc/NetworkManager/NetworkManager.conf

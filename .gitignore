@@ -1,4 +1,6 @@
 results/
 build_dir/
+images-prep/
 tmp/
 *.deb
+*.dtb

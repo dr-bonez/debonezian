@@ -25,10 +25,14 @@ if tty -s; then
   USE_TTY="-it"
 fi
 
-if [ -z "$(docker images -q "debonezian_build:${SUITE}")" ]; then
-	docker build -t "debonezian_build:${SUITE}" ./image-recipe
+dockerfile_hash=$(sha256sum image-recipe/Dockerfile | head -c 7)
+
+docker_img_name="debonezian_build:${SUITE}-${dockerfile_hash}"
+
+if [ -z "$(docker images -q "${docker_img_name}")" ]; then
+	docker build --build-arg=SUITE=${SUITE} -t "${docker_img_name}" ./image-recipe
 fi
 
 docker run $USE_TTY --rm --privileged -v "$(pwd)/image-recipe:/root/image-recipe" -v "$(pwd)/results:/root/results" \
-	-e IB_TARGET_PLATFORM="$PLATFORM" -e IB_TARGET_ARCH="$ARCH" -e IB_SUITE="$SUITE" -e IB_UID="$UID" -e IB_INCLUDE \
-	"debonezian_build:${SUITE}" /root/image-recipe/build.sh
+	-e IB_TARGET_PLATFORM="$PLATFORM" -e IB_TARGET_ARCH="$ARCH" -e IB_SUITE="$SUITE" -e IB_UID="$UID" -e IB_INCLUDE -e IB_LINUX_VERSION="6.16.3+deb13" \
+	"${docker_img_name}" /root/image-recipe/build.sh
